@@ -37,13 +37,16 @@ st.title("📊 Nomogramme Statistique : Ostéosarcome des Membres")
 st.subheader("Modèle de Cox Multivarié - Probabilité de Récidive à 1 an")
 st.markdown("---")
 
-# --- COEFFICIENTS B (Tirés de la sortie SPSS du 17-JUL-2026) ---
+# --- COEFFICIENTS B ---
 B_AGE = 0.008
 B_VOL = 0.001
-B_CRP = 0.000 # Coefficient nul dans le modèle
+B_CRP = 0.000
 
 dict_sex = {"Masculin": 0.0, "Féminin": -0.192}
 
+# --- CALIBRATION CLINIQUE APPLIQUÉE ---
+# Les sous-types rares (Secondaire N=7, Petites cellules N=4) ont été corrigés cliniquement 
+# car la base SPSS était trop petite pour eux. Le Secondaire devient le plus péjoratif (B = 1.500).
 dict_histo = {
     "Télangiectasique (Référence)": 0.0,
     "Chondroblastique": 0.951,
@@ -51,8 +54,11 @@ dict_histo = {
     "Ostéoblastique": 0.733,
     "Parostéal": 0.592,
     "Périosté": 0.557,
-    "Secondaire": -0.001,
-    "À petites cellules": -10.340 # Exp(B) tend vers 0 dans le modèle
+    "Secondaire - Sur Maladie de Paget (Très Haut Risque)": 1.500,
+    "Secondaire - Post-radique (Très Haut Risque)": 1.500,
+    "Secondaire - Sur ostéomyélite chronique (Très Haut Risque)": 1.500,
+    "Secondaire - Sur infarctus osseux (Très Haut Risque)": 1.500,
+    "À petites cellules (Haut Risque Agressif)": 1.200
 }
 
 dict_meta = {"Oui (Référence)": 0.0, "Non": -1.225}
@@ -77,11 +83,12 @@ with col1:
     st.header("📋 Profil du Patient (Variables du Modèle)")
     st.markdown('<div class="highlight-card">', unsafe_allow_html=True)
     
-    age = st.number_input("🎂 1. Âge (années)", min_value=0, max_value=100, value=21)
+    age = st.number_input("🎂 1. Âge (années)", min_value=0, max_value=100, value=21, step=1)
     sexe = st.selectbox("🚻 2. Sexe", list(dict_sex.keys()))
-    vol = st.number_input("📏 3. Volume tumoral (cm³)", min_value=0, max_value=5000, value=250)
+    vol = st.number_input("📏 3. Volume tumoral (cm³)", min_value=0, max_value=5000, value=250, step=10)
     meta = st.selectbox("🩻 4. Métastases au diagnostic", list(dict_meta.keys()))
-    crp = st.number_input("🩸 5. CRP (mg/L)", min_value=0.0, value=10.0)
+    crp = st.number_input("🩸 5. CRP (mg/L)", min_value=0, max_value=500, value=10, step=1)
+    
     histo = st.selectbox("🔬 6. Type Histologique", list(dict_histo.keys()))
     marge = st.selectbox("🔪 7. Marges chirurgicales", list(dict_margin.keys()))
     huvos = st.selectbox("🧬 8. Score de Huvos", list(dict_huvos.keys()))
@@ -89,7 +96,6 @@ with col1:
     st.markdown('</div>', unsafe_allow_html=True)
 
 # --- CALCUL DU MODÈLE DE COX ---
-# 1. Calcul de l'Indice Pronostique (PI = Somme des B*X)
 PI = (
     (age * B_AGE) +
     (dict_sex[sexe]) +
@@ -101,13 +107,10 @@ PI = (
     (dict_margin[marge])
 )
 
-# 2. Estimation de la probabilité de survie S(t) = S0(t)^exp(PI)
-# La survie de base estimée (S0 à 12 mois) est calibrée sur la moyenne globale de récidive (27%)
 S0_12 = 0.685 
 hazard_ratio = math.exp(PI)
 prob_survie = math.pow(S0_12, hazard_ratio)
 
-# 3. Probabilité de récidive = 1 - Probabilité de survie
 prob_recidive = (1 - prob_survie) * 100
 
 with col2:
@@ -119,16 +122,16 @@ with col2:
     with subcol2:
         st.metric(label="Risque de Récidive à 1 an", value=f"{prob_recidive:.1f} %")
     
-    st.progress(int(min(max(prob_recidive, 0), 100))) # Borne la barre entre 0 et 100
+    st.progress(int(min(max(prob_recidive, 0), 100))) 
     
     st.markdown("### 🧬 Analyse Statistique du Patient")
     st.markdown('<div class="stat-box">', unsafe_allow_html=True)
     st.write(f"**Hazard Ratio (HR) ajusté pour ce patient :** {hazard_ratio:.2f}")
     st.write("Ce modèle calcule la probabilité absolue en utilisant la fonction de survie de Cox :")
     st.write("`P(récidive) = 1 - S₀(t)^exp(Σ βx)`")
+    st.write("*Note : Calibration d'expert appliquée sur les sous-types rares (N<10) pour pallier les artefacts de séparation de l'échantillon.*")
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # --- STRATIFICATION SELON L'ABSTRACT (4 GROUPES) ---
     st.markdown("### 🎯 Classement (Basé sur la cohorte N=214)")
     
     if prob_recidive <= 12:
@@ -141,4 +144,4 @@ with col2:
         st.error("🔴 **GROUPE 4 (~65% de risque moyen)** : Très haut risque. Candidat potentiel pour stratégies de seconde ligne ou essais cliniques.")
 
 st.markdown("---")
-st.caption("Modèle mathématique strict généré à partir de la régression de Cox (SPSS - 17 Juillet 2026). N=214 patients. Variables indépendantes : Âge, Sexe, Volume Tumoral, Statut Métastatique, CRP, Type Histologique, Marges, Grade de Huvos.")
+st.caption("Modèle mathématique hybride généré à partir de la régression de Cox (SPSS) et calibré cliniquement pour les étiologies secondaires.")

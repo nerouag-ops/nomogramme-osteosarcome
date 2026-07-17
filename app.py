@@ -1,9 +1,10 @@
 import streamlit as st
+import math
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
-    page_title="Nomogramme Ostéosarcome V13",
-    page_icon="🦴",
+    page_title="Nomogramme Cox Ostéosarcome",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -21,113 +22,123 @@ st.markdown("""
         border-left: 5px solid #3B82F6;
         box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
     }
+    .stat-box {
+        font-family: monospace;
+        font-size: 0.9em;
+        color: #555;
+        background-color: #eee;
+        padding: 10px;
+        border-radius: 5px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🦴 Nomogramme Dynamique : Ostéosarcome des Membres")
-st.subheader("Prédiction du risque à 1 an & Stratégie Thérapeutique Personnalisée (V13)")
+st.title("📊 Nomogramme Statistique : Ostéosarcome des Membres")
+st.subheader("Modèle de Cox Multivarié - Probabilité de Récidive à 1 an")
 st.markdown("---")
 
-# --- DICTIONNAIRES DES SCORES (PONDÉRATION CLINIQUE CORRIGÉE) ---
-type_options = {
-    "Parostéal (Bas grade)": 0,
-    "Central de bas grade": 0,
-    "Périosté (Grade intermédiaire)": 1,
-    "Fibroblastique (Haut grade - Pronostic intermédiaire)": 2,
-    "Chondroblastique (Haut grade)": 3,
-    "Ostéoblastique (Haut grade conventionnel - Référence)": 4,
-    "Télangiectasique (Haut grade agressif)": 5,
-    "À petites cellules (Haut grade agressif)": 5,
-    "Secondaire sur maladie de Paget": 6,
-    "Secondaire post-radique": 6
-}
-age_options = {"≤ 8 ans": 0, "9 à 17 ans": 1, "≥ 18 ans": 2}
-volume_options = {"< 100 cm³ (Petit volume)": 0, "100 - 200 cm³ (Intermédiaire)": 1, "> 200 cm³ (Massif)": 2}
-crp_options = {"< 10 mg/L (Normale)": 0, "≥ 10 mg/L (Élevée)": 2}
-marge_options = {"Saines (R0)": 0, "Limites (R1)": 2, "Infiltrées (R2)": 4}
+# --- COEFFICIENTS B (Tirés de la sortie SPSS du 17-JUL-2026) ---
+B_AGE = 0.008
+B_VOL = 0.001
+B_CRP = 0.000 # Coefficient nul dans le modèle
 
-# Le Huvos a désormais un impact MAJEUR sur le score
-huvos_options = {
-    "Grade IV (Nécrose 100%)": 0,
-    "Grade III (Nécrose 90-99%)": 1,
-    "Grade II (Nécrose 50-89%)": 4,
-    "Grade I (Nécrose 0-49%)": 6
+dict_sex = {"Masculin": 0.0, "Féminin": -0.192}
+
+dict_histo = {
+    "Télangiectasique (Référence)": 0.0,
+    "Chondroblastique": 0.951,
+    "Fibroblastique": -0.620,
+    "Ostéoblastique": 0.733,
+    "Parostéal": 0.592,
+    "Périosté": 0.557,
+    "Secondaire": -0.001,
+    "À petites cellules": -10.340 # Exp(B) tend vers 0 dans le modèle
+}
+
+dict_meta = {"Oui (Référence)": 0.0, "Non": -1.225}
+
+dict_huvos = {
+    "Grade IV - Nécrose 100% (Référence)": 0.0,
+    "Grade III - Nécrose 90-99%": 0.110,
+    "Grade II - Nécrose 50-89%": 0.230,
+    "Grade I - Nécrose 0-49%": 0.572
+}
+
+dict_margin = {
+    "R2 - Macroscopique (Référence)": 0.0,
+    "R1 - Microscopique": 0.291,
+    "R0 - Saines": -0.069
 }
 
 # --- INTERFACE UTILISATEUR ---
 col1, col2 = st.columns([1, 1.5], gap="large")
 
 with col1:
-    st.header("📋 Profil du Patient")
+    st.header("📋 Profil du Patient (Variables du Modèle)")
     st.markdown('<div class="highlight-card">', unsafe_allow_html=True)
     
-    type_osteo = st.selectbox("🔬 1. Sous-type histologique", list(type_options.keys()))
-    age = st.selectbox("🎂 2. Âge du patient", list(age_options.keys()))
-    vol = st.selectbox("📏 3. Volume tumoral initial (IRM)", list(volume_options.keys()))
-    crp = st.selectbox("🩸 4. CRP (Marqueur inflammatoire)", list(crp_options.keys()))
-    marge = st.selectbox("🔪 5. Marges de résection chirurgicale", list(marge_options.keys()))
-    huvos = st.selectbox("🧬 6. Réponse histologique (Huvos)", list(huvos_options.keys()))
+    age = st.number_input("🎂 1. Âge (années)", min_value=0, max_value=100, value=21)
+    sexe = st.selectbox("🚻 2. Sexe", list(dict_sex.keys()))
+    vol = st.number_input("📏 3. Volume tumoral (cm³)", min_value=0, max_value=5000, value=250)
+    meta = st.selectbox("🩻 4. Métastases au diagnostic", list(dict_meta.keys()))
+    crp = st.number_input("🩸 5. CRP (mg/L)", min_value=0.0, value=10.0)
+    histo = st.selectbox("🔬 6. Type Histologique", list(dict_histo.keys()))
+    marge = st.selectbox("🔪 7. Marges chirurgicales", list(dict_margin.keys()))
+    huvos = st.selectbox("🧬 8. Score de Huvos", list(dict_huvos.keys()))
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-# --- CALCULS ---
-score_total = type_options[type_osteo] + age_options[age] + volume_options[vol] + crp_options[crp] + marge_options[marge] + huvos_options[huvos]
-score_max = 22 # Nouveau score maximum
-probabilite = (score_total / score_max) * 100
+# --- CALCUL DU MODÈLE DE COX ---
+# 1. Calcul de l'Indice Pronostique (PI = Somme des B*X)
+PI = (
+    (age * B_AGE) +
+    (dict_sex[sexe]) +
+    (dict_histo[histo]) +
+    (vol * B_VOL) +
+    (dict_meta[meta]) +
+    (crp * B_CRP) +
+    (dict_huvos[huvos]) +
+    (dict_margin[marge])
+)
+
+# 2. Estimation de la probabilité de survie S(t) = S0(t)^exp(PI)
+# La survie de base estimée (S0 à 12 mois) est calibrée sur la moyenne globale de récidive (27%)
+S0_12 = 0.685 
+hazard_ratio = math.exp(PI)
+prob_survie = math.pow(S0_12, hazard_ratio)
+
+# 3. Probabilité de récidive = 1 - Probabilité de survie
+prob_recidive = (1 - prob_survie) * 100
 
 with col2:
-    st.header("📊 Évaluation & Plan d'Action")
+    st.header("📊 Calcul de Probabilité Exacte")
     
     subcol1, subcol2 = st.columns(2)
     with subcol1:
-        st.metric(label="Score de Risque", value=f"{score_total} / {score_max}")
+        st.metric(label="Indice Pronostique (PI)", value=f"{PI:.3f}")
     with subcol2:
-        st.metric(label="Probabilité de Récidive (1 an)", value=f"{probabilite:.1f} %")
+        st.metric(label="Risque de Récidive à 1 an", value=f"{prob_recidive:.1f} %")
     
-    st.progress(int(probabilite))
+    st.progress(int(min(max(prob_recidive, 0), 100))) # Borne la barre entre 0 et 100
     
-    # --- LOGIQUE DYNAMIQUE DES RECOMMANDATIONS ---
-    # La conduite à tenir s'adapte exactement aux choix du chirurgien
+    st.markdown("### 🧬 Analyse Statistique du Patient")
+    st.markdown('<div class="stat-box">', unsafe_allow_html=True)
+    st.write(f"**Hazard Ratio (HR) ajusté pour ce patient :** {hazard_ratio:.2f}")
+    st.write("Ce modèle calcule la probabilité absolue en utilisant la fonction de survie de Cox :")
+    st.write("`P(récidive) = 1 - S₀(t)^exp(Σ βx)`")
+    st.markdown('</div>', unsafe_allow_html=True)
     
-    # 1. Logique Chirurgicale
-    if marge == "Infiltrées (R2)":
-        chirurgie_text = "⚠️ **Reprise chirurgicale impérative (R2)**. L'amputation d'emblée ou la désarticulation est formellement indiquée en cas d'envahissement vasculo-nerveux majeur ou de contamination compartimentale."
-    elif marge == "Limites (R1)":
-        chirurgie_text = "⚠️ **Reprise chirurgicale pour élargissement** si techniquement réalisable sans amputation, suite aux marges limites (R1)."
-    else:
-        chirurgie_text = "✅ **Conservation du membre validée** (Marges R0). Surveillance clinique de la reconstruction. Pas de reprise chirurgicale indiquée."
-
-    # 2. Logique Médicale (Chimio/Radio)
-    if "Parostéal" in type_osteo or "Central" in type_osteo:
-        chimio_text = "🚫 **Abstention thérapeutique stricte** (Pas de chimiothérapie ni radiothérapie pour ce bas grade). La chirurgie R0 est curative."
-    elif huvos in ["Grade I (Nécrose 0-49%)", "Grade II (Nécrose 50-89%)"]:
-        chimio_text = "⚠️ **Mauvais répondeur histologique :** Lignes de rattrapage à discuter en RCP d'emblée (Ifosfamide/Étoposide). Recours aux TKI (Cabozantinib) en cas de progression."
-    else:
-        chimio_text = "✅ **Bon répondeur histologique :** Poursuite du protocole adjuvant standard (MAP). Radiothérapie formellement non indiquée."
-
-    # 3. Logique d'Exploration
-    if probabilite < 30:
-        explo_text = "Examen clinique, Radiographie locale et TDM thoracique **tous les 3 mois pendant 2 ans**. Puis tous les 4 mois la 3ème année. Puis tous les 6 mois les 4ème et 5ème années."
-    elif probabilite < 70:
-        explo_text = "IRM locale (dépistage tissulaire) et TDM thoracique **tous les 2 mois pendant 1 an**. Puis tous les 3 mois la 2ème année."
-    else:
-        explo_text = "Bilan d'extension systémique immédiat (**TEP-Scan 18F-FDG ☢️ / Scintigraphie osseuse**). TDM thoracique et IRM locale stricts tous les 2 mois pendant 2 ans."
-
-    # --- AFFICHAGE DES RECOMMANDATIONS ---
-    st.markdown("### 🎯 Stratégie Recommandée (Guidelines ESMO/NCCN)")
+    # --- STRATIFICATION SELON L'ABSTRACT (4 GROUPES) ---
+    st.markdown("### 🎯 Classement (Basé sur la cohorte N=214)")
     
-    if probabilite < 30:
-        st.success("🟢 **RISQUE FAIBLE : Profil très favorable.**")
-    elif probabilite < 70:
-        st.warning("🟡 **RISQUE INTERMÉDIAIRE : Vigilance clinique requise.**")
+    if prob_recidive <= 12:
+        st.success("🟢 **GROUPE 1 (~6% de risque moyen)** : Risque très faible. Surveillance standard.")
+    elif prob_recidive <= 28:
+        st.info("🔵 **GROUPE 2 (~18% de risque moyen)** : Risque modéré. Vigilance clinique.")
+    elif prob_recidive <= 50:
+        st.warning("🟡 **GROUPE 3 (~38% de risque moyen)** : Haut risque. Surveillance radiologique rapprochée.")
     else:
-        st.error("🔴 **RISQUE ÉLEVÉ : Alerte clinique majeure.**")
-
-    st.markdown(f"""
-    * **🔍 Exploration :** {explo_text}
-    * **🔪 Chirurgie :** {chirurgie_text}
-    * **💉 Traitement médical :** {chimio_text}
-    """)
+        st.error("🔴 **GROUPE 4 (~65% de risque moyen)** : Très haut risque. Candidat potentiel pour stratégies de seconde ligne ou essais cliniques.")
 
 st.markdown("---")
-st.caption("🌐 Développé pour le 46ème Congrès Mondial SICOT. L'algorithme décisionnel s'adapte dynamiquement au score de Huvos, au type histologique précis et à la qualité des marges.")
+st.caption("Modèle mathématique strict généré à partir de la régression de Cox (SPSS - 17 Juillet 2026). N=214 patients. Variables indépendantes : Âge, Sexe, Volume Tumoral, Statut Métastatique, CRP, Type Histologique, Marges, Grade de Huvos.")

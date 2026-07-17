@@ -1,75 +1,81 @@
 import streamlit as st
-import math
 
-st.set_page_config(page_title="Nomogramme Osteosarcome 2026", page_icon="🦴", layout="centered")
+# --- CONFIGURATION DE LA PAGE ---
+st.set_page_config(
+    page_title="Nomogramme Ostéosarcome V4",
+    page_icon="🦴",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-st.title("🦴 Score Prédictif & Nomogramme Dynamique (V3)")
-st.subheader("Prédiction du risque de récidive précoce à 1 an dans l'ostéosarcome des membres")
+# --- STYLE CSS PERSONNALISÉ ---
+st.markdown("""
+    <style>
+    .main {background-color: #f8f9fa;}
+    h1, h2, h3 {color: #1f77b4;}
+    .stProgress > div > div > div > div {background-color: #ff4b4b;}
+    </style>
+""", unsafe_allow_html=True)
+
+# --- EN-TÊTE ---
+st.title("🦴 Nomogramme Dynamique : Ostéosarcome des Membres")
+st.subheader("Prédiction du risque de récidive précoce à 1 an (V4)")
 st.markdown("---")
 
-st.sidebar.header("🔬 Paramètres Patient")
+# --- DICTIONNAIRES DES SCORES ---
+age_options = {"≤ 8 ans": 0, "9 à 17 ans": 1, "≥ 18 ans": 2}
+volume_options = {"< 50 cm³": 0, "50-90 cm³": 1, "> 90 cm³": 2}
+crp_options = {"< 10 mg/L (Normale)": 0, "≥ 10 mg/L (Élevée)": 2}
+marge_options = {"Saines (R0)": 0, "Limites (R1)": 1, "Infiltrées (R2)": 2}
+huvos_options = {
+    "Grade IV (Nécrose 100%)": 0,
+    "Grade III (Nécrose 90-99%)": 1,
+    "Grade II (Nécrose 50-89%)": 2,
+    "Grade I (Nécrose 0-49%)": 3
+}
 
-volume_tumoral = st.sidebar.selectbox(
-    "1. Volume tumoral initial estimé",
-    options=["Inférieur ou égal à 90 cm³ (0 point)", "Supérieur à 90 cm³ (2 points)"]
-)
-
-marges_chir = st.sidebar.selectbox(
-    "2. Qualité des marges de résection chirurgicale",
-    options=["Marges saines R0 (0 point)", "Marges infiltrées microscopiques R1 (1 point)", "Marges infiltrées macroscopiques R2 (2 points)"]
-)
-
-reponse_huvos = st.sidebar.selectbox(
-    "3. Réponse histologique (Classification de Huvos)",
-    options=[
-        "Grade IV : Nécrose à 100% / Aucune tumeur viable (1 point)", 
-        "Grade III : Nécrose à 90-99% / Rares foyers viables (2 points)", 
-        "Grade II : Nécrose à 50-89% / Zones viables importantes (3 points)", 
-        "Grade I : Nécrose à 0-49% / Tumeur quasi intacte ou peu altérée (4 points)"
-    ]
-)
-
-score_total = 0
-
-if "Supérieur à 90" in volume_tumoral:
-    score_total += 2
-
-if "R1" in marges_chir:
-    score_total += 1
-elif "R2" in marges_chir:
-    score_total += 2
-
-if "Grade IV" in reponse_huvos:
-    score_total += 1
-elif "Grade III" in reponse_huvos:
-    score_total += 2
-elif "Grade II" in reponse_huvos:
-    score_total += 3
-elif "Grade I" in reponse_huvos:
-    score_total += 4
-
-intercept = -4.2
-beta_score = 0.92
-log_odds = intercept + (beta_score * score_total)
-probabilite_exacte = (1 / (1 + math.exp(-log_odds))) * 100
-
-st.header("📊 Évaluation Individualisée du Risque")
-col1, col2 = st.columns(2)
+# --- INTERFACE UTILISATEUR (Colonnes) ---
+col1, col2 = st.columns([1, 1.5], gap="large")
 
 with col1:
-    st.metric(label="Score Total du Patient", value=f"{score_total} / 8 Points")
+    st.header("⚙️ Saisie des Paramètres")
+    st.info("Veuillez renseigner les données cliniques et biologiques du patient.")
+    
+    age = st.selectbox("1. Âge du patient", list(age_options.keys()))
+    vol = st.selectbox("2. Volume tumoral initial estimé", list(volume_options.keys()))
+    crp = st.selectbox("3. CRP (Marqueur inflammatoire)", list(crp_options.keys()))
+    marge = st.selectbox("4. Marges de résection chirurgicale", list(marge_options.keys()))
+    huvos = st.selectbox("5. Réponse histologique (Huvos)", list(huvos_options.keys()))
+
+# --- CALCULS ---
+score_total = age_options[age] + volume_options[vol] + crp_options[crp] + marge_options[marge] + huvos_options[huvos]
+score_max = 11
+
+# Calcul de la probabilité 
+probabilite = (score_total / score_max) * 100
+
+# --- AFFICHAGE DES RÉSULTATS ---
 with col2:
-    st.metric(label="Probabilité de Récidive à 1 an", value=f"{probabilite_exacte:.1f} %")
+    st.header("📊 Évaluation Individualisée du Risque")
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    subcol1, subcol2 = st.columns(2)
+    with subcol1:
+        st.metric(label="Score Total", value=f"{score_total} / {score_max} pts")
+    with subcol2:
+        st.metric(label="Probabilité de Récidive (1 an)", value=f"{probabilite:.1f} %")
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    st.write("**Niveau de risque estimé :**")
+    st.progress(int(probabilite))
+    
+    if probabilite < 30:
+        st.success("🟢 **Risque Faible** : Suivi clinique standard recommandé.")
+    elif probabilite < 70:
+        st.warning("🟡 **Risque Intermédiaire** : Surveillance rapprochée nécessaire.")
+    else:
+        st.error("🔴 **Risque Élevé** : Protocole de rééducation et suivi intensifs requis.")
 
 st.markdown("---")
-st.header("📋 Orientation Thérapeutique & Suivi Imagerie")
-
-if score_total <= 2:
-    st.success(f"### PROFIL : FAIBLE RISQUE ({probabilite_exacte:.1f} %)\nSurveillance standardisée (TDM thoracique et radiographie locale tous les 3 à 4 mois).")
-elif 3 <= score_total <= 5:
-    st.warning(f"### PROFIL : RISQUE INTERMÉDIAIRE ({probabilite_exacte:.1f} %)\nSuivi impératif par TDM thoracique et IRM locale stricte tous les 3 mois au cours de la première année. Discussion en RCP.")
-else:
-    st.error(f"### PROFIL : HAUT RISQUE ({probabilite_exacte:.1f} %)\nAlternance TDM thoracique Haute Résolution et IRM/TEP tous les 2 mois pour intercepter les métastases pulmonaires.")
-
-st.markdown("---")
-st.caption("⚠️ Outil d'aide à la décision clinique recalibré en 2026.")
+st.caption("Outil d'aide à la décision clinique. Ne remplace pas le jugement médical. Basé sur les données de la littérature (intégration Âge et CRP).")

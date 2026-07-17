@@ -34,39 +34,40 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 Nomogramme Statistique : Ostéosarcome des Membres")
-st.subheader("Modèle de Cox Calibré sur la Littérature - Récidive à 1 an")
+st.subheader("Modèle de Cox Calibré - Récidive à 1 an")
 st.markdown("---")
 
-# --- COEFFICIENTS B RÉÉQUILIBRÉS ---
+# --- COEFFICIENTS B (RÉÉQUILIBRAGE MAJEUR) ---
 
 B_AGE = 0.005
 B_VOL = 0.002  
-B_CRP = 0.002  # Adouci : influence modérée, agit comme co-facteur
+B_CRP = 0.002  
 
 dict_sex = {"Masculin": 0.0, "Féminin": -0.150}
 
-# Histologie adoucie pour ne pas écraser les autres variables
+# L'influence de l'histologie est fortement réduite pour laisser la place aux vrais facteurs prédictifs
 dict_histo = {
     "Ostéoblastique (Conventionnel - Référence)": 0.0,
     "Fibroblastique (Similaire à la référence)": 0.0,
-    "Télangiectasique (Similaire sous chimio moderne)": 0.050,
-    "Chondroblastique (Légèrement moins bon)": 0.150,
-    "Périosté (Bon pronostic)": -0.400,
-    "Parostéal (Excellent pronostic)": -0.800,
-    "À petites cellules (Mauvais pronostic)": 0.500,
-    "Secondaire - Post-radique (Très mauvais)": 0.900,
-    "Secondaire - Sur Maladie de Paget (Très mauvais)": 0.900,
-    "Secondaire - Sur ostéomyélite chronique / Infection (Très mauvais)": 0.900,
-    "Secondaire - Sur infarctus osseux (Très mauvais)": 0.900
+    "Télangiectasique (Similaire sous chimio moderne)": 0.025,
+    "Chondroblastique (Légèrement moins bon)": 0.075,
+    "Périosté (Bon pronostic)": -0.200,
+    "Parostéal (Excellent pronostic)": -0.400,
+    "À petites cellules (Mauvais pronostic)": 0.250,
+    "Secondaire - Post-radique (Très mauvais)": 0.450,
+    "Secondaire - Sur Maladie de Paget (Très mauvais)": 0.450,
+    "Secondaire - Sur ostéomyélite chronique / Infection (Très mauvais)": 0.450,
+    "Secondaire - Sur infarctus osseux (Très mauvais)": 0.450
 }
 
 dict_meta = {"Non (Référence)": 0.0, "Oui (Métastases primaires)": 1.252}
 
+# Les rois du pronostic (Ancrés sur les HR 3.0 et 2.4 de votre Abstract)
 dict_huvos = {
     "Grade IV - Nécrose 100% (Référence)": 0.0,
     "Grade III - Nécrose 90-99%": 0.200,
-    "Grade II - Nécrose 50-89% (Mauvaise réponse)": 0.800,
-    "Grade I - Nécrose 0-49% (Très mauvaise réponse)": 1.100
+    "Grade II - Nécrose 50-89% (Mauvaise réponse)": 0.900,
+    "Grade I - Nécrose 0-49% (Très mauvaise réponse)": 1.200
 }
 
 dict_margin = {
@@ -126,7 +127,7 @@ with col2:
     st.markdown("### 🧬 Analyse Statistique du Patient")
     st.markdown('<div class="stat-box">', unsafe_allow_html=True)
     st.write(f"**Hazard Ratio (HR) cumulé pour ce patient :** {hazard_ratio:.2f}")
-    st.write("Ce modèle intègre les variables prédictives majeures (Statut métastatique, Marges, Huvos) validées par la cohorte d'étude.")
+    st.write("Ce modèle donne la primauté absolue au statut des marges (R) et à la réponse histologique à la chimiothérapie (Huvos).")
     st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown("### 🎯 Classement (Basé sur la cohorte)")
@@ -141,4 +142,4 @@ with col2:
         st.error("🔴 **GROUPE 4 (~65% de risque moyen)** : Très haut risque. Candidat pour stratégies de seconde ligne ou essais cliniques.")
 
 st.markdown("---")
-st.caption("Modèle clinico-statistique. Les poids des variables ont été équilibrés pour refléter la primauté de la réponse histologique et de la qualité de résection.")
+st.caption("Modèle clinico-statistique. Les poids des variables reflètent strictement les facteurs prédictifs indépendants majeurs (Huvos et Marges) identifiés dans l'analyse de la cohorte.")
